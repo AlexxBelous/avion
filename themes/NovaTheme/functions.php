@@ -6,7 +6,8 @@
 |--------------------------------------------------------------------------
 | This section describes the core logic for working with entities
 */
-define( 'IS_VITE_DEVELOPMENT', true );
+
+define( 'IS_VITE_DEVELOPMENT', ! defined( 'PANTHEON_ENVIRONMENT' ) );
 /*----------------------- END OF DATABASE REPOSITORY --------------------*/
 
 
