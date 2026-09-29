@@ -1,0 +1,50 @@
+name: Deploy to Pantheon
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 1. Устанавливаем Node.js для сборки нашей темы через Vite
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 2. Собираем продакшн-версию темы NovaTheme
+      - name: Build NovaTheme assets
+        working-directory: ./themes/NovaTheme
+        run: |
+          npm ci
+          npm run build
+
+      # 3. Настраиваем SSH для доступа к Pantheon через созданный приватный ключ
+      - name: Setup SSH Key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PANTHEON_SSH_KEY }}
+
+      # 4. Добавляем хост Pantheon в список известных, чтобы Git не выдавал предупреждение о неизвестном ключе
+      - name: Add Pantheon to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p 2222 codeserver.dev.7927a4ec-201f-42cf-8298-a085425d0831.drush.in >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      # 5. Пушим изменения в Git-репозиторий Pantheon
+      - name: Push to Pantheon
+        env:
+          PANTHEON_GIT_URL: "ssh://codeserver.dev.7927a4ec-201f-42cf-8298-a085425d0831@codeserver.dev.7927a4ec-201f-42cf-8298-a085425d0831.drush.in:2222/~/repository.git"
+        run: |
+          git remote add pantheon "$PANTHEON_GIT_URL"
+          git config user.name "GitHub Actions Bot"
+          git config user.email "bot@github.com"
+
+          # Отправляем ветку main из нашего GitHub в мастер-ветку Pantheon
+          git push pantheon main:master --force
