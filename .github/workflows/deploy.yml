@@ -9,42 +9,101 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      # 1. Получаем наш GitHub-проект
+      - name: Checkout GitHub repository
         uses: actions/checkout@v4
 
-      # 1. Устанавливаем Node.js для сборки нашей темы через Vite
+      # 2. Устанавливаем Node.js для Vite
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: themes/NovaTheme/package-lock.json
 
-      # 2. Собираем продакшн-версию темы NovaTheme
-      - name: Build NovaTheme assets
+      # 3. Собираем NovaTheme
+      - name: Build NovaTheme
         working-directory: ./themes/NovaTheme
         run: |
           npm ci
           npm run build
 
-      # 3. Настраиваем SSH для доступа к Pantheon через созданный приватный ключ
+      # 4. Настраиваем SSH для Pantheon
       - name: Setup SSH Key
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.PANTHEON_SSH_KEY }}
 
-      # 4. Добавляем хост Pantheon в список известных, чтобы Git не выдавал предупреждение о неизвестном ключе
+      # 5. Добавляем Pantheon в known_hosts
       - name: Add Pantheon to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p 2222 codeserver.dev.7927a4ec-201f-42cf-8298-a085425d0831.drush.in >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      # 5. Пушим изменения в Git-репозиторий Pantheon
-      - name: Push to Pantheon
+          ssh-keyscan -p 2222 \
+            codeserver.dev.7927a4ec-201f-42cf-8298-a085425d0831.drush.in \
+            >> ~/.ssh/known_hosts 2>/dev/null
+
+      # 6. Клонируем существующий Pantheon repository
+      - name: Clone Pantheon repository
         env:
           PANTHEON_GIT_URL: "ssh://codeserver.dev.7927a4ec-201f-42cf-8298-a085425d0831@codeserver.dev.7927a4ec-201f-42cf-8298-a085425d0831.drush.in:2222/~/repository.git"
         run: |
-          git remote add pantheon "$PANTHEON_GIT_URL"
+          git clone \
+            --branch master \
+            "$PANTHEON_GIT_URL" \
+            pantheon-deploy
+
+      # 7. Обновляем NovaTheme в Pantheon
+      - name: Deploy NovaTheme
+        run: |
+          rm -rf pantheon-deploy/wp-content/themes/NovaTheme
+
+          mkdir -p pantheon-deploy/wp-content/themes/NovaTheme
+
+          rsync -a \
+            --exclude="node_modules/" \
+            themes/NovaTheme/ \
+            pantheon-deploy/wp-content/themes/NovaTheme/
+
+      # 8. Обновляем плагины, если они присутствуют в GitHub repository
+      - name: Deploy plugins
+        run: |
+          if [ -d "plugins" ]; then
+            mkdir -p pantheon-deploy/wp-content/plugins
+
+            rsync -a \
+              --delete \
+              plugins/ \
+              pantheon-deploy/wp-content/plugins/
+          else
+            echo "No plugins directory in GitHub repository. Skipping plugins."
+          fi
+
+      # 9. Проверяем, что получилось
+      - name: Show deployment changes
+        working-directory: ./pantheon-deploy
+        run: |
+          git status --short
+
+      # 10. Коммитим изменения
+      - name: Commit changes
+        working-directory: ./pantheon-deploy
+        run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "bot@github.com"
 
-          # Отправляем ветку main из нашего GitHub в мастер-ветку Pantheon
-          git push pantheon main:master --force
+          git add wp-content/themes/NovaTheme
+          git add wp-content/plugins
+
+          if git diff --cached --quiet; then
+            echo "No changes to deploy."
+            exit 0
+          fi
+
+          git commit -m "Deploy NovaTheme from GitHub"
+
+      # 11. Отправляем изменения в Pantheon
+      - name: Push to Pantheon
+        working-directory: ./pantheon-deploy
+        run: |
+          git push origin master
