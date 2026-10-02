@@ -9,17 +9,18 @@
 # Docker and Secrets
 .env
 
-# Core and Database (Exclude all, keep custom.ini)
+# WordPress Core / Database
 /.srv/*
 !/.srv/custom.ini
 
-# WordPress Clean-up (Ignore all plugins and standard themes)
-/plugins/*
+# Standard WordPress themes
 /themes/*
-
-# Allow only your custom theme
 !/themes/NovaTheme/
 
-# Build files inside your theme (optional)
+# Node dependencies and build files
 **/node_modules/
 **/dist/
+
+# Plugins
+/plugins/*
+!/plugins/index.php

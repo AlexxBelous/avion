@@ -9,11 +9,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Получаем наш GitHub-проект
       - name: Checkout GitHub repository
         uses: actions/checkout@v4
 
-      # 2. Устанавливаем Node.js для Vite
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -21,29 +19,24 @@ jobs:
           cache: "npm"
           cache-dependency-path: themes/NovaTheme/package-lock.json
 
-      # 3. Собираем NovaTheme
       - name: Build NovaTheme
         working-directory: ./themes/NovaTheme
         run: |
           npm ci
           npm run build
 
-      # 4. Настраиваем SSH для Pantheon
       - name: Setup SSH Key
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.PANTHEON_SSH_KEY }}
 
-      # 5. Добавляем Pantheon в known_hosts
       - name: Add Pantheon to known_hosts
         run: |
           mkdir -p ~/.ssh
-
           ssh-keyscan -p 2222 \
             codeserver.dev.7927a4ec-201f-42cf-8298-a085425d0831.drush.in \
             >> ~/.ssh/known_hosts 2>/dev/null
 
-      # 6. Клонируем существующий Pantheon repository
       - name: Clone Pantheon repository
         env:
           PANTHEON_GIT_URL: "ssh://codeserver.dev.7927a4ec-201f-42cf-8298-a085425d0831@codeserver.dev.7927a4ec-201f-42cf-8298-a085425d0831.drush.in:2222/~/repository.git"
@@ -53,39 +46,34 @@ jobs:
             "$PANTHEON_GIT_URL" \
             pantheon-deploy
 
-      # 7. Обновляем NovaTheme в Pantheon
       - name: Deploy NovaTheme
         run: |
           rm -rf pantheon-deploy/wp-content/themes/NovaTheme
-
           mkdir -p pantheon-deploy/wp-content/themes/NovaTheme
 
           rsync -a \
             --exclude="node_modules/" \
+            --exclude="dist/" \
             themes/NovaTheme/ \
             pantheon-deploy/wp-content/themes/NovaTheme/
 
-      # 8. Обновляем плагины, если они присутствуют в GitHub repository
       - name: Deploy plugins
         run: |
           if [ -d "plugins" ]; then
             mkdir -p pantheon-deploy/wp-content/plugins
 
             rsync -a \
-              --delete \
               plugins/ \
               pantheon-deploy/wp-content/plugins/
           else
             echo "No plugins directory in GitHub repository. Skipping plugins."
           fi
 
-      # 9. Проверяем, что получилось
       - name: Show deployment changes
         working-directory: ./pantheon-deploy
         run: |
           git status --short
 
-      # 10. Коммитим изменения
       - name: Commit changes
         working-directory: ./pantheon-deploy
         run: |
@@ -102,7 +90,6 @@ jobs:
 
           git commit -m "Deploy NovaTheme from GitHub"
 
-      # 11. Отправляем изменения в Pantheon
       - name: Push to Pantheon
         working-directory: ./pantheon-deploy
         run: |
